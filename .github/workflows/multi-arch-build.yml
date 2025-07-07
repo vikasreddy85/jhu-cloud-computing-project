@@ -47,6 +47,8 @@ jobs:
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
           type=raw,value=latest,enable={{is_default_branch}}
+        flavor: |
+          latest=auto
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
@@ -62,8 +64,11 @@ jobs:
     - name: Test multi-arch images
       if: github.event_name != 'pull_request'
       run: |
+        # Convert to lowercase for Docker compatibility
+        IMAGE_LOWER=$(echo "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" | tr '[:upper:]' '[:lower:]')
+        
         echo "Testing AMD64 image..."
-        docker run --rm --platform linux/amd64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest echo "AMD64 test passed"
+        docker run --rm --platform linux/amd64 ${IMAGE_LOWER}:latest echo "AMD64 test passed"
         
         echo "Testing ARM64 image..."
-        docker run --rm --platform linux/arm64 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest echo "ARM64 test passed"
+        docker run --rm --platform linux/arm64 ${IMAGE_LOWER}:latest echo "ARM64 test passed"
