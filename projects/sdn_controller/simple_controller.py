@@ -6,10 +6,7 @@ This is a basic Ryu controller that implements simple Layer 2 learning switch fu
 Perfect for testing the standalone Mininet Docker environment.
 
 Usage:
-1. Copy to projects/ directory
-2. Start controller: ryu-manager simple_controller.py
-3. Start mininet: sudo mn --controller remote,ip=127.0.0.1,port=6653
-4. Test: mininet> pingall
+    ryu-manager projects/sdn_controller/simple_controller.py
 """
 
 from ryu.base import app_manager

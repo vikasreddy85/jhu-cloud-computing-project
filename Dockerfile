@@ -69,7 +69,6 @@ WORKDIR /app
 
 # Copy startup script and examples
 COPY start_services.sh /app/start_services.sh
-COPY examples/ /app/examples/
 RUN chmod +x /app/start_services.sh
 
 # Create python symlink for compatibility with mn command
