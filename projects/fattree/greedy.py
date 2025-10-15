@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-ElasticTree Topology-aware:
-1. Uses topology structure to make routing-aware decisions
-2. Considers pod-level affinity and communication patterns
-3. Groups communicating hosts in same pods when possible
-4. Minimizes inter-pod traffic to reduce core switch usage
+ElasticTree Greedy Bin-Packing:
+1. Sorts hosts by traffic/utilization
+2. Greedily packs hosts into switches to maximize consolidation
+3. Only activates switches needed for current traffic patterns
+4. Considers link capacity constraints
 
 Usage:
-    python3 projects/fattree/topology_aware_fixed.py
+    python3 projects/fattree/greedy_binpacking.py
 """
 
 from mininet.topo import Topo
@@ -17,11 +17,10 @@ from mininet.cli import CLI
 from mininet.log import setLogLevel, info
 from mininet.link import TCLink
 import logging
-import math
 import random
 from collections import defaultdict
 
-logging.basicConfig(filename='./fattree_elastictree.log', level=logging.DEBUG)
+logging.basicConfig(filename='./fattree_elastictree_greedy.log', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -122,22 +121,21 @@ class FatTree(Topo):
                         **linkopts)
 
 
-class ElasticTreeOptimizer:
-    def __init__(self, net, topo, active_ratio=0.5):
+class GreedyBinPackingOptimizer:
+    def __init__(self, net, topo):
         self.net = net
         self.topo = topo
         self.active_switches = set()
-        self.active_ratio = active_ratio
         self._build_topology_maps()
-        self._build_traffic_matrix(active_ratio)
         
     def _build_topology_maps(self):
+        """Build mappings between topology elements"""
         self.host_to_edge = {}
         self.edge_to_pod = {}
-        self.pod_to_aggs = defaultdict(list)
-        self.pod_to_edges = defaultdict(list)
         self.edge_to_aggs = defaultdict(list)
         self.agg_to_cores = defaultdict(list)
+        self.pod_to_aggs = defaultdict(list)
+        self.pod_to_edges = defaultdict(list)
         
         density = int(self.topo.density)
         end = int(self.topo.pod / 2)
@@ -148,218 +146,110 @@ class ElasticTreeOptimizer:
             if edge_idx < len(self.topo.EdgeSwitchList):
                 self.host_to_edge[host] = self.topo.EdgeSwitchList[edge_idx]
         
-        # Map edge switches to pods
+        # Map edge switches to pods and aggregation switches
         for i, edge in enumerate(self.topo.EdgeSwitchList):
             pod_idx = i // end
             self.edge_to_pod[edge] = pod_idx
             self.pod_to_edges[pod_idx].append(edge)
             
-            # Edge to agg connections
+            # Each edge connects to all agg switches in its pod
             for agg_in_pod in range(end):
                 agg_idx = pod_idx * end + agg_in_pod
                 if agg_idx < len(self.topo.AggSwitchList):
                     self.edge_to_aggs[edge].append(self.topo.AggSwitchList[agg_idx])
         
-        # Map agg switches to pods and cores
+        # Map agg switches to pods and core switches
         for i, agg in enumerate(self.topo.AggSwitchList):
             pod_idx = i // end
             agg_in_pod = i % end
             self.pod_to_aggs[pod_idx].append(agg)
             
-            # Agg to core connections
+            # Each agg connects to specific core switches
             for core_row in range(end):
                 core_idx = agg_in_pod * end + core_row
                 if core_idx < len(self.topo.CoreSwitchList):
                     self.agg_to_cores[agg].append(self.topo.CoreSwitchList[core_idx])
     
-    def _build_traffic_matrix(self, active_ratio=0.5):
-        """
-        Build traffic demand matrix between hosts
-        active_ratio: fraction of hosts with traffic (0.01 to 0.5)
-        """
-        self.traffic_matrix = defaultdict(lambda: defaultdict(float))
-        
-        hosts = [h.name for h in self.net.hosts]
-        
-        num_active = max(1, int(len(hosts) * active_ratio))
-        active_hosts = random.sample(hosts, num_active)
-        
-        info(f"Active hosts for traffic: {num_active}/{len(hosts)} ({active_ratio*100:.0f}%)\n")
-        info(f"Active: {', '.join(sorted(active_hosts))}\n")
-        
-        for src in active_hosts:
-            for dst in active_hosts:
-                if src != dst:
-                    self.traffic_matrix[src][dst] = random.uniform(0.01, 0.5)
+    def get_host_traffic(self):
+        """Simulate or measure host traffic (in real implementation, would query controller)"""
+        traffic = {}
+        for host in self.net.hosts:
+            # Simulate traffic: random value between 0.01 and 0.5 Gbps
+            traffic[host.name] = random.uniform(0.01, 0.5)
+        return traffic
     
-    def build_affinity_groups(self):
+    def greedy_bin_packing(self, host_traffic):
         """
-        Build affinity groups: clusters of hosts that communicate heavily
-        This is the key topology-aware insight
-        """
-        info(f"\n*** Building Communication Affinity Groups ***\n")
-        
-        # Calculate total traffic between each host pair
-        host_traffic = defaultdict(float)
-        for src in self.traffic_matrix:
-            for dst in self.traffic_matrix[src]:
-                traffic = self.traffic_matrix[src][dst]
-                pair = tuple(sorted([src, dst]))
-                host_traffic[pair] += traffic
-        
-        # Build affinity groups using simple greedy clustering
-        all_hosts = set()
-        for src in self.traffic_matrix:
-            all_hosts.add(src)
-        for flows in self.traffic_matrix.values():
-            for dst in flows:
-                all_hosts.add(dst)
-        
-        # Sort host pairs by traffic volume
-        sorted_pairs = sorted(host_traffic.items(), key=lambda x: x[1], reverse=True)
-        
-        affinity_groups = []
-        assigned_hosts = set()
-        
-        density = int(self.topo.density)
-        
-        # Greedily form groups that should be co-located
-        for (h1, h2), traffic in sorted_pairs:
-            if h1 in assigned_hosts or h2 in assigned_hosts:
-                continue
-            
-            group = {h1, h2}
-            assigned_hosts.add(h1)
-            assigned_hosts.add(h2)
-            
-            for host in all_hosts:
-                if host in assigned_hosts or len(group) >= density:
-                    break
-                has_affinity = False
-                for member in group:
-                    pair = tuple(sorted([host, member]))
-                    if pair in host_traffic and host_traffic[pair] > 0.05:
-                        has_affinity = True
-                        break
-                if has_affinity:
-                    group.add(host)
-                    assigned_hosts.add(host)
-            
-            affinity_groups.append(group)
-        
-        # Add remaining hosts as singleton groups
-        for host in all_hosts:
-            if host not in assigned_hosts:
-                affinity_groups.append({host})
-        
-        info(f"Created {len(affinity_groups)} affinity groups:\n")
-        for i, group in enumerate(affinity_groups):
-            info(f"  Group {i}: {sorted(group)} (size: {len(group)})\n")
-        
-        return affinity_groups
-    
-    def topology_aware_placement(self, affinity_groups):
-        """
-        Place affinity groups intelligently across the topology
+        Greedy bin-packing algorithm:
+        1. Sort hosts by traffic (descending)
+        2. Pack hosts into edge switches, respecting capacity
+        3. Activate only necessary upper-layer switches
         """
         required_switches = set()
         
-        info(f"\n*** Topology-Aware Placement ***\n")
+        if not host_traffic:
+            return required_switches
         
-        density = int(self.topo.density)
-        end = int(self.topo.pod / 2)
+        # Sort hosts by traffic (largest first for better bin packing)
+        sorted_hosts = sorted(host_traffic.items(), key=lambda x: x[1], reverse=True)
         
-        sorted_groups = sorted(affinity_groups, key=lambda g: len(g), reverse=True)
+        edge_utilization = defaultdict(float)
+        edge_capacity = self.topo.bw_h2a * self.topo.density  # Total capacity per edge
+        host_to_assigned_edge = {}
         
-        edge_assignment = {}  # group -> edge switch
-        pod_utilization = defaultdict(int)  # pod -> number of groups
+        info(f"\n*** Greedy Bin-Packing Process ***\n")
+        info(f"Edge capacity: {edge_capacity:.2f} Gbps\n\n")
         
-        current_pod = 0
-        edge_in_pod = 0
-        
-        for group in sorted_groups:
-            if current_pod >= self.topo.pod:
-                info(f"WARNING: Not enough pods, wrapping around\n")
-                current_pod = 0
-                edge_in_pod = 0
+        # Greedy assignment: try to fill each edge switch before moving to next
+        for host_name, traffic in sorted_hosts:
+            assigned = False
             
-            edge_idx = current_pod * end + edge_in_pod
-            if edge_idx >= len(self.topo.EdgeSwitchList):
-                edge_idx = len(self.topo.EdgeSwitchList) - 1
-            
-            edge = self.topo.EdgeSwitchList[edge_idx]
-            edge_assignment[frozenset(group)] = edge
-            required_switches.add(edge)
-            pod_utilization[current_pod] += 1
-            
-            info(f"  Group {sorted(group)[:3]}{'...' if len(group) > 3 else ''} -> {edge} (Pod {current_pod})\n")
-            
-            edge_in_pod += 1
-            if edge_in_pod >= end:
-                edge_in_pod = 0
-                current_pod += 1
-        
-        active_pods = set()
-        for edge in required_switches:
-            if edge in self.topo.EdgeSwitchList:
-                pod = self.edge_to_pod[edge]
-                active_pods.add(pod)
-        
-        for pod in active_pods:
-            for agg in self.pod_to_aggs[pod]:
-                required_switches.add(agg)
-        
-        inter_pod_traffic = 0
-        intra_pod_traffic = 0
-        
-        for src in self.traffic_matrix:
-            src_edge = None
-            for group, edge in edge_assignment.items():
-                if src in group:
-                    src_edge = edge
-                    break
-            if not src_edge:
-                continue
-            src_pod = self.edge_to_pod[src_edge]
-            
-            for dst in self.traffic_matrix[src]:
-                dst_edge = None
-                for group, edge in edge_assignment.items():
-                    if dst in group:
-                        dst_edge = edge
+            # Try to fit into an already-active edge switch
+            for edge in self.topo.EdgeSwitchList:
+                if edge in required_switches:
+                    if edge_utilization[edge] + traffic <= edge_capacity:
+                        edge_utilization[edge] += traffic
+                        host_to_assigned_edge[host_name] = edge
+                        assigned = True
+                        info(f"  {host_name} ({traffic:.3f} Gbps) -> {edge} (util: {edge_utilization[edge]:.3f}/{edge_capacity:.2f})\n")
                         break
-                if not dst_edge:
-                    continue
-                dst_pod = self.edge_to_pod[dst_edge]
-                
-                traffic = self.traffic_matrix[src][dst]
-                if src_pod == dst_pod:
-                    intra_pod_traffic += traffic
-                else:
-                    inter_pod_traffic += traffic
+            
+            # If not assigned, activate a new edge switch
+            if not assigned:
+                for edge in self.topo.EdgeSwitchList:
+                    if edge not in required_switches:
+                        edge_utilization[edge] = traffic
+                        required_switches.add(edge)
+                        host_to_assigned_edge[host_name] = edge
+                        info(f"  {host_name} ({traffic:.3f} Gbps) -> {edge} [NEW] (util: {edge_utilization[edge]:.3f}/{edge_capacity:.2f})\n")
+                        break
         
-        info(f"\n*** Traffic Analysis ***\n")
-        info(f"  Active pods: {sorted(active_pods)}\n")
-        info(f"  Intra-pod traffic: {intra_pod_traffic:.3f} Gbps\n")
-        info(f"  Inter-pod traffic: {inter_pod_traffic:.3f} Gbps\n")
+        # Activate necessary aggregation switches
+        active_pods = set()
+        active_edges = [e for e in required_switches if e in self.topo.EdgeSwitchList]
+        
+        for edge in active_edges:
+            pod = self.edge_to_pod[edge]
+            active_pods.add(pod)
+            for agg in self.edge_to_aggs[edge]:
+                required_switches.add(agg)
         
         if len(active_pods) <= 1:
             num_core_needed = 1
-            info(f"  Core switches needed: {num_core_needed} (single pod)\n")
         else:
-            total_capacity = self.topo.bw_c2a
-            num_core_needed = max(1, int((inter_pod_traffic / total_capacity) + 0.5))
-            num_core_needed = min(num_core_needed, len(self.topo.CoreSwitchList))
-            info(f"  Core switches needed: {num_core_needed} (for {inter_pod_traffic:.3f} Gbps)\n")
+            num_core_needed = min(len(active_pods), len(self.topo.CoreSwitchList))
         
         for i in range(num_core_needed):
             required_switches.add(self.topo.CoreSwitchList[i])
         
-        return required_switches
+        info(f"\n*** Active Pods: {sorted(active_pods)} ***\n")
+        
+        return required_switches, edge_utilization
     
-    def visualize_topology(self):
+    def visualize_topology(self, edge_utilization):
+        """Visualize the topology with utilization information"""
         info("\n" + "="*80 + "\n")
-        info("TOPOLOGY STATE (TOPOLOGY-AWARE AFFINITY PLACEMENT)\n")
+        info("TOPOLOGY STATE (GREEDY BIN-PACKING)\n")
         info("="*80 + "\n")
         
         info("\nCORE LAYER:\n")
@@ -377,8 +267,10 @@ class ElasticTreeOptimizer:
                 statuses.append(f"{agg}:{status}")
             info(", ".join(statuses) + "\n")
         
-        info("\nEDGE LAYER:\n")
+        info("\nEDGE LAYER (with utilization):\n")
         density = int(self.topo.density)
+        edge_capacity = self.topo.bw_h2a * density
+        
         for pod in range(self.topo.pod):
             info(f"  Pod {pod}:\n")
             for edge in self.pod_to_edges[pod]:
@@ -387,23 +279,32 @@ class ElasticTreeOptimizer:
                 host_start = edge_idx * density
                 host_end = min(host_start + density, len(self.topo.HostList))
                 hosts = self.topo.HostList[host_start:host_end]
-                info(f"    {edge}: {status} <- {', '.join(hosts)}\n")
+                
+                if edge in edge_utilization and edge in self.active_switches:
+                    util = edge_utilization[edge]
+                    util_pct = (util / edge_capacity) * 100
+                    info(f"    {edge}: {status} [Util: {util:.3f}/{edge_capacity:.2f} Gbps = {util_pct:.1f}%]\n")
+                else:
+                    info(f"    {edge}: {status}\n")
+                    
+                info(f"           Hosts: {', '.join(hosts)}\n")
         
         info("="*80 + "\n\n")
     
     def optimize_topology(self):
-        info("\n*** ElasticTree Topology-Aware Optimization ***\n")
+        """Main optimization routine"""
+        info("\n*** ElasticTree Greedy Bin-Packing Optimization ***\n")
         
-        # Calculate total traffic
-        total_traffic = sum(sum(flows.values()) for flows in self.traffic_matrix.values())
+        # Get host traffic information
+        host_traffic = self.get_host_traffic()
+        total_traffic = sum(host_traffic.values())
         info(f"Total network traffic: {total_traffic:.3f} Gbps\n")
+        info(f"Active hosts: {len(host_traffic)}\n")
         
-        # Build affinity groups based on communication patterns
-        affinity_groups = self.build_affinity_groups()
+        # Run greedy bin-packing
+        required_switches, edge_utilization = self.greedy_bin_packing(host_traffic)
         
-        # Place groups topology-aware
-        required_switches = self.topology_aware_placement(affinity_groups)
-        
+        # Calculate statistics
         total_switches = (len(self.topo.CoreSwitchList) + 
                          len(self.topo.AggSwitchList) + 
                          len(self.topo.EdgeSwitchList))
@@ -428,13 +329,21 @@ class ElasticTreeOptimizer:
         info(f"    Agg:   {agg_active}/{len(self.topo.AggSwitchList)}\n")
         info(f"    Edge:  {edge_active}/{len(self.topo.EdgeSwitchList)}\n")
         
-        self.visualize_topology()
+        if edge_active > 0:
+            active_edge_utils = [edge_utilization[e] for e in self.topo.EdgeSwitchList 
+                                if e in required_switches]
+            avg_util = sum(active_edge_utils) / len(active_edge_utils) if active_edge_utils else 0
+            edge_capacity = self.topo.bw_h2a * self.topo.density
+            avg_util_pct = (avg_util / edge_capacity) * 100
+            info(f"\n  Average edge utilization: {avg_util:.3f} Gbps ({avg_util_pct:.1f}%)\n")
+        
+        self.visualize_topology(edge_utilization)
         
         return self.active_switches
 
 
 def run_topology():
-    setLogLevel('info')    
+    setLogLevel('info')
     k = 4
     topo = FatTree(k=k)
     
@@ -456,7 +365,7 @@ def run_topology():
     info(f"  Hosts:            {topo.iHost}\n")
     info(f"  Hosts per edge:   {topo.density}\n")
     
-    optimizer = ElasticTreeOptimizer(net, topo, active_ratio=0.5)
+    optimizer = GreedyBinPackingOptimizer(net, topo)
     optimizer.optimize_topology()
     
     CLI(net)
