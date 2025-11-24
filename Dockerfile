@@ -34,6 +34,7 @@ RUN pip3 install --no-cache-dir \
     eventlet==0.30.2 \
     ryu==4.34 \
     routes>=2.5.1 \
+    matplotlib>=3.3.4 \
     webob>=1.8.7
 
 # Manual Mininet Python 3 installation approach
