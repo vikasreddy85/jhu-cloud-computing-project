@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-ElasticTree Formal/Model-Based Optimization:
-1. Uses optimization model to find MINIMUM switch set
-2. Considers multiple routing paths and redundancy
-3. Tries different configurations and picks optimal
-4. Guarantees connectivity through path verification
-
-Usage:
-    python3 projects/fattree/formal_optimization.py
-"""
-
 from mininet.topo import Topo
 from mininet.net import Mininet
 from mininet.node import RemoteController, OVSKernelSwitch
@@ -20,10 +8,7 @@ import logging
 import random
 from collections import defaultdict
 
-logging.basicConfig(filename='./fattree_elastictree_formal.log', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-
 class FatTree(Topo):
     def __init__(self, k=4):
         self.pod = k
@@ -150,7 +135,6 @@ class FormalOptimizer:
         density = int(self.topo.density)
         end = int(self.topo.pod / 2)
         
-        # Map hosts to edge switches
         for i, host in enumerate(self.topo.HostList):
             edge_idx = i // density
             if edge_idx < len(self.topo.EdgeSwitchList):
@@ -158,13 +142,11 @@ class FormalOptimizer:
                 self.host_to_edge[host] = edge
                 self.all_links.append((host, edge))
         
-        # Map edge switches
         for i, edge in enumerate(self.topo.EdgeSwitchList):
             pod_idx = i // end
             self.edge_to_pod[edge] = pod_idx
             self.pod_to_edges[pod_idx].append(edge)
             
-            # Edge to agg links
             for agg_in_pod in range(end):
                 agg_idx = pod_idx * end + agg_in_pod
                 if agg_idx < len(self.topo.AggSwitchList):
@@ -173,13 +155,11 @@ class FormalOptimizer:
                     self.agg_to_edges[agg].append(edge)
                     self.all_links.append((edge, agg))
         
-        # Map agg switches
         for i, agg in enumerate(self.topo.AggSwitchList):
             pod_idx = i // end
             agg_in_pod = i % end
             self.pod_to_aggs[pod_idx].append(agg)
             
-            # Agg to core links
             for core_row in range(end):
                 core_idx = agg_in_pod * end + core_row
                 if core_idx < len(self.topo.CoreSwitchList):
@@ -254,13 +234,13 @@ class FormalOptimizer:
     def calculate_cost(self, switch_set):
         """
         Calculate cost (objective function) for a switch configuration
-        Cost = number of switches (we want to minimize this)
+        Cost = number of switches
         """
         return len(switch_set)
     
     def formal_optimization(self):
         """
-        Model-based optimization: Try to find MINIMAL switch set
+        Model-based optimization: Try to find minimal switch set
         This simulates branch-and-bound or iterative constraint solving
         """
         info("\nFormal Optimization Process\n")                
@@ -392,8 +372,6 @@ class FormalOptimizer:
         self.active_switches = required_switches
         self.active_links = required_links
         
-        # Display results
-        info(f"\n*** Optimization Results ***\n")
         info(f"  Total switches:     {total_switches}\n")
         info(f"  Active switches:    {len(required_switches)}\n")
         info(f"  Powered down:       {powered_down}\n")
@@ -414,16 +392,12 @@ class FormalOptimizer:
     
     def visualize_topology(self):
         """Visualize optimized topology"""
-        info("\n" + "="*80 + "\n")
-        info("TOPOLOGY STATE (FORMAL OPTIMIZATION)\n")
-        info("="*80 + "\n")
-        
-        info("\nCORE LAYER:\n")
+        info("\Core Layer:\n")
         for switch in self.topo.CoreSwitchList:
             status = "ON " if switch in self.active_switches else "OFF"
             info(f"  {switch}: {status}\n")
         
-        info("\nAGGREGATION LAYER:\n")
+        info("\Aggregation Layer:\n")
         end = int(self.topo.pod / 2)
         for pod in range(self.topo.pod):
             info(f"  Pod {pod}: ")
@@ -433,7 +407,7 @@ class FormalOptimizer:
                 statuses.append(f"{agg}:{status}")
             info(", ".join(statuses) + "\n")
         
-        info("\nEDGE LAYER:\n")
+        info("\Edge Layer:\n")
         density = int(self.topo.density)
         for pod in range(self.topo.pod):
             info(f"  Pod {pod}:\n")
@@ -445,8 +419,6 @@ class FormalOptimizer:
                 hosts = self.topo.HostList[host_start:host_end]
                 info(f"    {edge}: {status} <- {', '.join(hosts)}\n")
         
-        info("="*80 + "\n\n")
-
 
 def run_topology():
     setLogLevel('info')
@@ -463,6 +435,5 @@ if __name__ == '__main__':
     try:
         run_topology()
     except KeyboardInterrupt:
-        info("\n*** Interrupted by user ***\n")
         from mininet.clean import cleanup
         cleanup()

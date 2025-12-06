@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""
-ElasticTree Greedy Bin-Packing for Leaf-Spine Topology:
-1. Sorts hosts by traffic/utilization
-2. Greedily packs hosts into leaf switches to maximize consolidation
-3. Only activates switches needed for current traffic patterns
-4. Considers link capacity constraints
-
-Topology:
-- Spine layer: Interconnected core switches
-- Leaf layer: Access switches connected to hosts
-- Each leaf connects to all spines (full mesh)
-
-Usage:
-    python3 leafspine_greedy_binpacking.py
-"""
-
 from mininet.topo import Topo
 from mininet.net import Mininet
 from mininet.node import RemoteController, OVSKernelSwitch
@@ -25,21 +9,9 @@ import logging
 import random
 from collections import defaultdict
 
-logging.basicConfig(filename='./leafspine_elastictree_greedy.log', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-
 class LeafSpineTopo(Topo):
-    """
-    Leaf-Spine topology builder
-    
-    Args:
-        num_spines: Number of spine switches
-        num_leaves: Number of leaf switches
-        hosts_per_leaf: Number of hosts per leaf switch
-        bw_spine_leaf: Bandwidth for spine-leaf links (Gbps)
-        bw_host_leaf: Bandwidth for host-leaf links (Gbps)
-    """
     def __init__(self, num_spines=4, num_leaves=8, hosts_per_leaf=4, 
                  bw_spine_leaf=10.0, bw_host_leaf=1.0):
         self.num_spines = num_spines
@@ -125,17 +97,10 @@ class GreedyBinPackingOptimizer:
         """Simulate host traffic (in real implementation, would query controller)"""
         traffic = {}
         for host in self.net.hosts:
-            # Simulate traffic: random value between 0.01 and 0.5 Gbps
             traffic[host.name] = random.uniform(0.01, 0.5)
         return traffic
     
     def greedy_bin_packing(self, host_traffic):
-        """
-        Greedy bin-packing algorithm for leaf-spine:
-        1. Sort hosts by traffic (descending)
-        2. Pack hosts into leaf switches, respecting capacity
-        3. Activate only necessary spine switches based on inter-leaf traffic
-        """
         required_switches = set()
         
         if not host_traffic:
@@ -146,10 +111,7 @@ class GreedyBinPackingOptimizer:
         leaf_utilization = defaultdict(float)
         leaf_capacity = self.topo.bw_host_leaf * self.topo.hosts_per_leaf
         host_to_assigned_leaf = {}
-        
-        info(f"\n*** Greedy Bin-Packing Process ***\n")
-        info(f"Leaf capacity: {leaf_capacity:.2f} Gbps\n\n")
-        
+
         for host_name, traffic in sorted_hosts:
             assigned = False
             
@@ -184,23 +146,16 @@ class GreedyBinPackingOptimizer:
             if i < len(self.topo.SpineList):
                 required_switches.add(self.topo.SpineList[i])
         
-        info(f"\n*** Active Leaves: {len(active_leaves)} ***\n")
-        info(f"*** Spines Needed: {num_spines_needed} ***\n")
-        
         return required_switches, leaf_utilization
     
     def visualize_topology(self, leaf_utilization):
         """Visualize the topology with utilization information"""
-        info("\n" + "="*80 + "\n")
-        info("TOPOLOGY STATE (GREEDY BIN-PACKING)\n")
-        info("="*80 + "\n")
-        
-        info("\nSPINE LAYER:\n")
+        info("\nspine:\n")
         for i, spine in enumerate(self.topo.SpineList, 1):
             status = "ON " if spine in self.active_switches else "OFF"
             info(f"  Spine {i} ({spine}): {status}\n")
         
-        info("\nLEAF LAYER (with utilization):\n")
+        info("\nleaf:\n")
         leaf_capacity = self.topo.bw_host_leaf * self.topo.hosts_per_leaf
         
         for i, leaf in enumerate(self.topo.LeafList, 1):
@@ -219,12 +174,9 @@ class GreedyBinPackingOptimizer:
             
             info(f"         Hosts: {', '.join(hosts)}\n")
         
-        info("="*80 + "\n\n")
     
     def optimize_topology(self):
-        """Main optimization routine"""
-        info("\n*** ElasticTree Greedy Bin-Packing Optimization (Leaf-Spine) ***\n")
-        
+        """Main optimization routine"""        
         host_traffic = self.get_host_traffic()
         total_traffic = sum(host_traffic.values())
         info(f"Total network traffic: {total_traffic:.3f} Gbps\n")
@@ -238,7 +190,6 @@ class GreedyBinPackingOptimizer:
         
         self.active_switches = required_switches
         
-        info(f"\n*** Optimization Results ***\n")
         info(f"  Total switches:     {total_switches}\n")
         info(f"  Active switches:    {len(required_switches)}\n")
         info(f"  Powered down:       {powered_down}\n")
@@ -291,7 +242,6 @@ def run_topology():
     
     net.start()
     
-    info(f"\n*** Leaf-Spine Topology ***\n")
     info(f"  Spine switches:   {num_spines}\n")
     info(f"  Leaf switches:    {num_leaves}\n")
     info(f"  Hosts per leaf:   {hosts_per_leaf}\n")

@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-ElasticTree Formal/Model-Based Optimization for Leaf-Spine Topology:
-1. Uses optimization model to find MINIMUM switch set
-2. Considers multiple routing paths and redundancy
-3. Tries different configurations and picks optimal
-4. Guarantees connectivity through path verification
-
-Usage:
-    python3 leafspine_formal_optimization.py
-"""
-
 from mininet.topo import Topo
 from mininet.net import Mininet
 from mininet.node import RemoteController, OVSKernelSwitch
@@ -19,27 +7,17 @@ from mininet.link import TCLink
 import logging
 import random
 from collections import defaultdict
-
-logging.basicConfig(filename='./leafspine_elastictree_formal.log', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-
 class LeafSpineTopo(Topo):
-    """
-    Leaf-Spine Topology:
-    - Spine switches: Core forwarding layer
-    - Leaf switches: Access layer connected to hosts
-    - Full mesh: Every leaf connects to every spine
-    """
-    
     def __init__(self, num_spines=4, num_leaves=4, hosts_per_leaf=4):
         self.num_spines = num_spines
         self.num_leaves = num_leaves
         self.hosts_per_leaf = hosts_per_leaf
         self.total_hosts = num_leaves * hosts_per_leaf
         
-        self.bw_spine_leaf = 10.0  # Gbps
-        self.bw_host_leaf = 1.0    # Gbps
+        self.bw_spine_leaf = 10.0
+        self.bw_host_leaf = 1.0
         
         self.SpineSwitchList = []
         self.LeafSwitchList = []
@@ -91,11 +69,6 @@ class LeafSpineTopo(Topo):
 
 
 class LeafSpineFormalOptimizer:
-    """
-    Formal optimization for leaf-spine using constraint-based approach.
-    Minimizes active switches while maintaining connectivity for all traffic demands.
-    """
-    
     def __init__(self, net, topo, active_ratio=0.5):
         self.net = net
         self.topo = topo
@@ -148,7 +121,6 @@ class LeafSpineFormalOptimizer:
     def find_path(self, src_host, dst_host, active_switches):
         """
         Find a path between two hosts through active switches.
-        In leaf-spine: host -> leaf -> spine -> leaf -> host
         """
         if src_host == dst_host:
             return []
@@ -188,17 +160,15 @@ class LeafSpineFormalOptimizer:
     def calculate_cost(self, switch_set):
         """
         Calculate cost (objective function) for a switch configuration.
-        Cost = number of switches (minimize this)
+        Cost = number of switches
         """
         return len(switch_set)
     
     def formal_optimization(self):
         """
-        Model-based optimization: Find MINIMAL switch set.
+        Model-based optimization: Find minimal switch set.
         Uses iterative constraint solving approach.
         """
-        info("\n=== Formal Optimization Process ===\n")
-        
         required_switches = set()
         
         active_hosts = set()
@@ -217,14 +187,10 @@ class LeafSpineFormalOptimizer:
                 active_leaves.add(leaf)
                 required_switches.add(leaf)
         
-        info(f"  Step 1: Required leaf switches: {len(active_leaves)}\n")
         
         if len(active_leaves) <= 1:
-            info("  Step 2: Single leaf - no spine switches needed\n")
             spine_config = set()
         else:
-            info(f"  Step 2: Multiple leaves ({len(active_leaves)}) - finding minimal spine set\n")
-
             spine_config = None
             
             for num_spines in range(1, len(self.topo.SpineSwitchList) + 1):
@@ -243,7 +209,6 @@ class LeafSpineFormalOptimizer:
         required_switches.update(spine_config)
         
         original_size = len(required_switches)
-        info(f"  Step 3: Initial configuration has {original_size} switches\n")
         
         removable = []
         for switch in list(required_switches):
@@ -255,11 +220,10 @@ class LeafSpineFormalOptimizer:
                 removable.append(switch)
         
         if removable:
-            info(f"  Step 4: Found {len(removable)} redundant spine switches\n")
             for switch in removable:
                 required_switches.remove(switch)
         else:
-            info(f"  Step 4: Configuration is minimal (no redundancy)\n")
+            info(f"Configuration is minimal (no redundancy)\n")
         
         final_size = len(required_switches)
         info(f"\n  Optimization result: {original_size} → {final_size} switches\n")
@@ -280,10 +244,6 @@ class LeafSpineFormalOptimizer:
     
     def optimize_topology(self):
         """Main optimization routine"""
-        info("\n" + "="*80 + "\n")
-        info("LEAF-SPINE ELASTICTREE FORMAL OPTIMIZATION\n")
-        info("="*80 + "\n")
-        
         total_traffic = sum(sum(flows.values()) for flows in self.traffic_matrix.values())
         info(f"\nTotal network traffic demand: {total_traffic:.3f} Gbps\n")
         
@@ -295,10 +255,6 @@ class LeafSpineFormalOptimizer:
         
         self.active_switches = required_switches
         self.active_links = required_links
-        
-        info(f"\n{'='*80}\n")
-        info(f"*** OPTIMIZATION RESULTS ***\n")
-        info(f"{'='*80}\n")
         info(f"  Total switches:      {total_switches}\n")
         info(f"  Active switches:     {len(required_switches)}\n")
         info(f"  Powered down:        {powered_down}\n")
@@ -326,18 +282,14 @@ class LeafSpineFormalOptimizer:
     
     def visualize_topology(self):
         """Visualize optimized topology state"""
-        info("\n" + "="*80 + "\n")
-        info("TOPOLOGY STATE VISUALIZATION\n")
-        info("="*80 + "\n")
-        
-        info("\nSPINE LAYER:\n")
+        info("\nspine:\n")
         for spine in self.topo.SpineSwitchList:
             status = "ON " if spine in self.active_switches else "OFF"
             active_leaves = sum(1 for leaf in self.spine_to_leaves[spine] 
                               if leaf in self.active_switches)
             info(f"  {spine}: {status}  (connects to {active_leaves} active leaves)\n")
         
-        info("\nLEAF LAYER:\n")
+        info("\nleaf:\n")
         for leaf in self.topo.LeafSwitchList:
             status = "ON " if leaf in self.active_switches else "OFF"
             hosts = self.leaf_to_hosts[leaf]
@@ -360,7 +312,7 @@ def run_topology():
     num_spines = 4
     num_leaves = 6
     hosts_per_leaf = 4
-    active_ratio = 0.4  # 40% of hosts are active
+    active_ratio = 0.4
     
     info(f"\nCreating Leaf-Spine Topology:\n")
     info(f"  Spines: {num_spines}\n")
@@ -384,9 +336,6 @@ def run_topology():
     optimizer = LeafSpineFormalOptimizer(net, topo, active_ratio=active_ratio)
     optimizer.optimize_topology()
     
-    info("\n*** Network ready. Starting CLI ***\n")
-    info("*** Type 'exit' to quit ***\n\n")
-    
     CLI(net)
     net.stop()
 
@@ -395,6 +344,5 @@ if __name__ == '__main__':
     try:
         run_topology()
     except KeyboardInterrupt:
-        info("\n*** Interrupted by user ***\n")
         from mininet.clean import cleanup
         cleanup()

@@ -1,15 +1,3 @@
-#!/usr/bin/env python3
-"""
-ElasticTree Topology-aware for Leaf-Spine:
-1. Groups communicating hosts under same leaf switches
-2. Minimizes inter-leaf traffic
-3. Only activates spine switches needed for cross-leaf communication
-4. Optimizes based on communication affinity patterns
-
-Usage:
-    python3 projects/leafspine/topology_aware.py
-"""
-
 from mininet.topo import Topo
 from mininet.net import Mininet
 from mininet.node import RemoteController, OVSKernelSwitch
@@ -20,17 +8,8 @@ import logging
 import random
 from collections import defaultdict
 
-logging.basicConfig(filename='./leafspine_elastictree.log', level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-
 class LeafSpineTopo(Topo):
-    """
-    Leaf-Spine Topology:
-    - num_spines: Number of spine (core) switches
-    - num_leaves: Number of leaf (ToR) switches
-    - hosts_per_leaf: Number of hosts connected to each leaf
-    """
     def __init__(self, num_spines=4, num_leaves=8, hosts_per_leaf=4):
         self.num_spines = num_spines
         self.num_leaves = num_leaves
@@ -135,10 +114,7 @@ class ElasticTreeOptimizer:
     def build_affinity_groups(self):
         """
         Build affinity groups: clusters of hosts that communicate heavily
-        These should be co-located on the same leaf switch
-        """
-        info(f"\n*** Building Communication Affinity Groups ***\n")
-        
+        """        
         host_traffic = defaultdict(float)
         for src in self.traffic_matrix:
             for dst in self.traffic_matrix[src]:
@@ -197,10 +173,7 @@ class ElasticTreeOptimizer:
         """
         Place affinity groups on leaf switches to minimize inter-leaf traffic
         """
-        required_switches = set()
-        
-        info(f"\n*** Topology-Aware Placement ***\n")
-        
+        required_switches = set()        
         sorted_groups = sorted(affinity_groups, key=lambda g: len(g), reverse=True)
         
         leaf_assignment = {}
@@ -225,7 +198,6 @@ class ElasticTreeOptimizer:
                 else:
                     current_leaf_idx += 1
             else:
-                info(f"WARNING: Not enough leaf capacity for all groups\n")
                 leaf = self.topo.LeafSwitchList[0]
                 leaf_assignment[frozenset(group)] = leaf
                 required_switches.add(leaf)
@@ -261,7 +233,6 @@ class ElasticTreeOptimizer:
                     flow_key = tuple(sorted([src_leaf, dst_leaf]))
                     inter_leaf_flows[flow_key] += traffic
         
-        info(f"\n*** Traffic Analysis ***\n")
         active_leaves = len(required_switches)
         info(f"  Active leaf switches: {active_leaves}/{len(self.topo.LeafSwitchList)}\n")
         info(f"  Intra-leaf traffic: {intra_leaf_traffic:.3f} Gbps (stays within leaf)\n")
@@ -290,27 +261,19 @@ class ElasticTreeOptimizer:
     
     def visualize_topology(self):
         """Display the current state of the topology"""
-        info("\n" + "="*80 + "\n")
-        info("TOPOLOGY STATE (TOPOLOGY-AWARE AFFINITY PLACEMENT)\n")
-        info("="*80 + "\n")
-        
-        info("\nSPINE LAYER:\n")
+        info("\nspine:\n")
         for spine in self.topo.SpineSwitchList:
             status = "ON " if spine in self.active_switches else "OFF"
             info(f"  {spine}: {status}\n")
         
-        info("\nLEAF LAYER:\n")
+        info("\nleaf:\n")
         for leaf in self.topo.LeafSwitchList:
             status = "ON " if leaf in self.active_switches else "OFF"
             hosts = self.leaf_to_hosts[leaf]
             info(f"  {leaf}: {status} <- {', '.join(hosts)}\n")
-        
-        info("="*80 + "\n\n")
-    
+            
     def optimize_topology(self):
-        """Main optimization routine"""
-        info("\n*** ElasticTree Topology-Aware Optimization (Leaf-Spine) ***\n")
-        
+        """Main optimization routine"""        
         total_traffic = sum(sum(flows.values()) for flows in self.traffic_matrix.values())
         info(f"Total network traffic: {total_traffic:.3f} Gbps\n")
         
@@ -324,7 +287,6 @@ class ElasticTreeOptimizer:
         
         self.active_switches = required_switches
         
-        info(f"\n*** Optimization Results ***\n")
         info(f"  Total switches:     {total_switches}\n")
         info(f"  Active switches:    {len(required_switches)}\n")
         info(f"  Powered down:       {powered_down}\n")
@@ -366,7 +328,6 @@ def run_topology():
     
     net.start()
     
-    info(f"\n*** Leaf-Spine Topology ***\n")
     info(f"  Spine switches:   {topo.num_spines}\n")
     info(f"  Leaf switches:    {topo.num_leaves}\n")
     info(f"  Hosts per leaf:   {topo.hosts_per_leaf}\n")
