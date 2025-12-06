@@ -33,7 +33,7 @@ Inside the container:
 sudo mn --test pingall
 ```
 
-### 4. Test with Included Examples
+### 4. Test Individual Optimization Algorithms
 
 ```bash
 python3 projects/fattree/formal.py
@@ -47,10 +47,18 @@ python3 projects/jellyfish/topology-aware.py
 python3 projects/leaf-spine/formal.py
 python3 projects/leaf-spine/greedy.py
 python3 projects/leaf-spine/topology-aware.py
+```
 
-# Test connectivity in mininet prompt:
-mininet> pingall
-mininet> exit
+### 4. Reproduce Plots
+
+Run the plotting script **inside the container**:
+
+```bash
+python3 projects/scripts/plot-download.py
+```
+Then, outside the container, copy the /app folder to your Desktop:
+```bash
+docker cp mininet-dev:/app ~/Desktop
 ```
 
 ## Available Commands
